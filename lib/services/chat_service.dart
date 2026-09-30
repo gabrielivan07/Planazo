@@ -36,6 +36,24 @@ class ChatService {
     }
 
     final chats = (data as List).map((c) => Chat.fromJson(c)).toList();
+    for (var index = 0; index < chats.length; index++) {
+      if (chats[index].esGrupal) continue;
+      try {
+        final integrantes = await fetchIntegrantes(chats[index].id);
+        final otroUsuario =
+            integrantes.cast<Map<String, dynamic>?>().firstWhere(
+                  (integrante) => integrante?['usuario_id'] != usuarioId,
+                  orElse: () => null,
+                );
+        if (otroUsuario == null) continue;
+        chats[index] = chats[index].copyWith(
+          contactoNombre:
+              '${otroUsuario['nombre'] ?? ''} ${otroUsuario['apellido'] ?? ''}'
+                  .trim(),
+          contactoFoto: otroUsuario['foto_perfil_url'] as String?,
+        );
+      } catch (_) {}
+    }
     chats.sort((a, b) {
       if (a.fijado != b.fijado) return a.fijado ? -1 : 1;
       final ta = a.ultimoMensaje?.creadoEn ?? a.creadoEn;

@@ -74,6 +74,16 @@ En **Supabase > SQL Editor**, ejecutar en este orden exacto:
 3. supabase/funciones_auxiliares.sql ← Funciones RPC + Realtime config
 4. supabase/production_migration_001.sql
 5. supabase/chat_y_amistades_migration_002.sql ← Preferencias y acciones de chat
+6. supabase/planazo_features_migration_003.sql ← Plan gratuito, confianza y reseñas
+```
+
+La migración programa la penalización de ausencias si `pg_cron` ya está habilitado. Si no, activalo en **Supabase > Database > Extensions > pg_cron** y ejecutá:
+```sql
+SELECT cron.schedule(
+	'planazo-penalizar-ausencias',
+	'0 3 * * *',
+	'SELECT public.penalizar_ausencias();'
+);
 ```
 
 ### 4.3 Configurar Storage (para fotos)

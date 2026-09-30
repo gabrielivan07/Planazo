@@ -9,6 +9,7 @@ import '../services/chat_service.dart';
 import '../services/geolocacion_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/reportes_service.dart';
+import '../services/resenas_service.dart';
 
 /// Estado global de la app.
 ///
@@ -27,12 +28,14 @@ class AppProvider extends ChangeNotifier {
   final _geoSvc = GeolocacionService.instance;
   final _pushSvc = PushNotificationService.instance;
   final _reportesSvc = ReportesService.instance;
+  final _resenasSvc = ResenasService.instance;
 
   // ─── Estado interno ──────────────────────────────────────
   Usuario? _usuario;
   bool _cargando = false;
   String? _error;
   bool _cargandoJuntadas = false;
+  int _juntadasCreadasEsteMes = 0;
 
   List<Juntada> _juntadas = [];
   List<Chat> _chats = [];
@@ -40,11 +43,13 @@ class AppProvider extends ChangeNotifier {
 
   // Suscripción al stream de auth de Supabase
   StreamSubscription<AuthState>? _authSub;
+  Future<void>? _cargaInicialActiva;
 
   // ─── GETTERS PÚBLICOS ────────────────────────────────────
   Usuario? get usuario => _usuario;
   bool get cargando => _cargando;
   bool get cargandoJuntadas => _cargandoJuntadas;
+  int get juntadasCreadasEsteMes => _juntadasCreadasEsteMes;
   String? get error => _error;
   bool get estaLogueado => _usuario != null;
 
@@ -86,7 +91,13 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _cargarDatosIniciales() async {
+  Future<void> _cargarDatosIniciales() {
+    return _cargaInicialActiva ??= _ejecutarCargaInicial().whenComplete(() {
+      _cargaInicialActiva = null;
+    });
+  }
+
+  Future<void> _ejecutarCargaInicial() async {
     _setLoading(true);
     try {
       await Future.wait([
@@ -94,6 +105,7 @@ class AppProvider extends ChangeNotifier {
         _cargarJuntadas(),
         _cargarChats(),
         _cargarGeolocacion(),
+        _cargarCupoMensual(),
       ]);
       await _pushSvc.registerCurrentUser();
     } catch (e) {
@@ -143,11 +155,21 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _cargarCupoMensual() async {
+    final uid = _auth.currentUserId;
+    if (uid == null) return;
+    try {
+      _juntadasCreadasEsteMes = await _juntSvc.contarCreadasEsteMes(uid);
+      notifyListeners();
+    } catch (_) {}
+  }
+
   void _limpiarEstado() {
     _usuario = null;
     _juntadas = [];
     _chats = [];
     _juntadasUnidas = {};
+    _juntadasCreadasEsteMes = 0;
     _chatSvc.cancelarTodas();
     notifyListeners();
   }
@@ -158,10 +180,13 @@ class AppProvider extends ChangeNotifier {
     _error = null;
     try {
       await _auth.login(email: email, password: password);
-      // _listenAuth() detecta signedIn y carga los datos
+      await _cargarDatosIniciales();
+      if (_usuario == null) {
+        throw StateError(_error ?? 'No se pudo cargar el perfil.');
+      }
       return true;
     } catch (e) {
-      _error = _mensajeError(e);
+      _error ??= _mensajeError(e);
       notifyListeners();
       return false;
     } finally {
@@ -243,11 +268,22 @@ class AppProvider extends ChangeNotifier {
 
   // ─── JUNTADAS ────────────────────────────────────────────
   Future<Juntada> crearJuntada(Juntada juntada) async {
+    final usuario = _usuario;
+    if (usuario == null) throw StateError('Iniciá sesión para crear juntadas.');
+    if (!usuario.esPremium && _juntadasCreadasEsteMes >= 3) {
+      throw StateError('El plan gratuito permite crear 3 juntadas por mes.');
+    }
+    if (!usuario.esPremium && juntada.capacidadMaxima > 10) {
+      throw StateError(
+          'El plan gratuito admite hasta 10 personas por juntada.');
+    }
+
     _setLoading(true);
     try {
       final nueva = await _juntSvc.crear(juntada);
       _juntadas.insert(0, nueva);
       _juntadasUnidas.add(nueva.id);
+      _juntadasCreadasEsteMes++;
       try {
         await _cargarChats();
       } catch (_) {}
@@ -297,11 +333,6 @@ class AppProvider extends ChangeNotifier {
           creadoEn: j.creadoEn,
           distanciaKm: j.distanciaKm,
         );
-      }
-      // Sumar puntos de confianza localmente (el trigger lo hace en DB)
-      if (_usuario != null) {
-        _usuario =
-            _usuario!.copyWith(puntosConfianza: _usuario!.puntosConfianza + 5);
       }
       try {
         await _cargarChats();
@@ -374,14 +405,7 @@ class AppProvider extends ChangeNotifier {
       final idx = _chats.indexWhere((c) => c.id == chatId);
       if (idx != -1) {
         final c = _chats[idx];
-        _chats[idx] = Chat(
-          id: c.id,
-          juntadaId: c.juntadaId,
-          titulo: c.titulo,
-          esGrupal: c.esGrupal,
-          creadoEn: c.creadoEn,
-          mensajes: [...c.mensajes, m],
-        );
+        _chats[idx] = c.copyWith(mensajes: [...c.mensajes, m]);
         notifyListeners();
       }
       return m;
@@ -449,6 +473,62 @@ class AppProvider extends ChangeNotifier {
         motivo: motivo,
         detalle: detalle,
       );
+
+  Future<List<Map<String, dynamic>>> obtenerAsistenciaJuntada(
+          String juntadaId) =>
+      _juntSvc.fetchAsistencia(juntadaId);
+
+  Future<void> marcarAsistencia({
+    required String juntadaId,
+    required String usuarioId,
+    required String asistencia,
+  }) async {
+    await _juntSvc.marcarAsistencia(
+      juntadaId: juntadaId,
+      usuarioId: usuarioId,
+      asistencia: asistencia,
+    );
+    await _cargarPerfil();
+  }
+
+  Future<List<Map<String, dynamic>>> participantesParaResena(
+          String juntadaId) =>
+      _resenasSvc.fetchParticipantes(juntadaId);
+
+  Future<List<Map<String, dynamic>>> resenasDeJuntada(String juntadaId) =>
+      _resenasSvc.fetchResenasJuntada(juntadaId);
+
+  Future<void> enviarResenaJuntada({
+    required String juntadaId,
+    required int puntuacion,
+    required String comentario,
+  }) async {
+    final uid = _auth.currentUserId;
+    if (uid == null) throw StateError('Iniciá sesión para enviar una reseña.');
+    await _resenasSvc.crearResenaJuntada(
+      juntadaId: juntadaId,
+      autorId: uid,
+      puntuacion: puntuacion,
+      comentario: comentario,
+    );
+  }
+
+  Future<void> enviarResenaParticipante({
+    required String juntadaId,
+    required String participanteId,
+    required int puntuacion,
+    required String comentario,
+  }) async {
+    final uid = _auth.currentUserId;
+    if (uid == null) throw StateError('Iniciá sesión para enviar una reseña.');
+    await _resenasSvc.crearResenaParticipante(
+      juntadaId: juntadaId,
+      autorId: uid,
+      destinatarioId: participanteId,
+      puntuacion: puntuacion,
+      comentario: comentario,
+    );
+  }
 
   // ─── PERFIL ──────────────────────────────────────────────
   Future<void> actualizarIntereses(List<String> intereses) async {

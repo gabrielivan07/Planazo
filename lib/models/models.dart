@@ -43,12 +43,8 @@ class Usuario {
   String get iniciales =>
       '${nombre[0]}${apellido.isNotEmpty ? apellido[0] : ''}'.toUpperCase();
 
-  NivelConfianza get nivelConfianza {
-    if (puntosConfianza >= 400) return NivelConfianza.estrella;
-    if (puntosConfianza >= 250) return NivelConfianza.confiable;
-    if (puntosConfianza >= 100) return NivelConfianza.nuevo;
-    return NivelConfianza.enRiesgo;
-  }
+  NivelConfianza get nivelConfianza =>
+      NivelConfianza.desdePuntos(puntosConfianza);
 
   double get promedioCalificacion {
     if (resenas.isEmpty) return 0.0;
@@ -65,7 +61,7 @@ class Usuario {
       email: json['email'] as String? ?? '',
       telefono: json['telefono'] as String?,
       fotoPerfil: json['foto_perfil_url'] as String?,
-      puntosConfianza: json['puntos_confianza'] as int? ?? 100,
+      puntosConfianza: json['puntos_confianza'] as int? ?? 0,
       intereses: (json['intereses'] as List<dynamic>?)?.cast<String>() ?? [],
       esPremium: json['es_premium'] as bool? ?? false,
       verificado: json['verificado'] as bool? ?? false,
@@ -124,23 +120,52 @@ class Usuario {
 }
 
 enum NivelConfianza {
-  enRiesgo,
   nuevo,
+  regular,
   confiable,
-  estrella;
+  lider;
+
+  static NivelConfianza desdePuntos(int puntos) {
+    if (puntos >= lider.puntosMinimos) return lider;
+    if (puntos >= confiable.puntosMinimos) return confiable;
+    if (puntos >= regular.puntosMinimos) return regular;
+    return nuevo;
+  }
+
+  int get puntosMinimos => switch (this) {
+        NivelConfianza.nuevo => 0,
+        NivelConfianza.regular => 100,
+        NivelConfianza.confiable => 250,
+        NivelConfianza.lider => 400,
+      };
+
+  NivelConfianza? get siguiente => switch (this) {
+        NivelConfianza.nuevo => regular,
+        NivelConfianza.regular => confiable,
+        NivelConfianza.confiable => lider,
+        NivelConfianza.lider => null,
+      };
+
+  double progreso(int puntos) {
+    final proximo = siguiente;
+    if (proximo == null) return 1;
+    return ((puntos - puntosMinimos) / (proximo.puntosMinimos - puntosMinimos))
+        .clamp(0.0, 1.0)
+        .toDouble();
+  }
 
   String get etiqueta => switch (this) {
-        NivelConfianza.enRiesgo => 'En Riesgo',
         NivelConfianza.nuevo => 'Nuevo',
+        NivelConfianza.regular => 'Regular',
         NivelConfianza.confiable => 'Confiable',
-        NivelConfianza.estrella => 'Estrella',
+        NivelConfianza.lider => 'Líder',
       };
 
   String get emoji => switch (this) {
-        NivelConfianza.enRiesgo => '⚠️',
         NivelConfianza.nuevo => '🌱',
+        NivelConfianza.regular => '🟡',
         NivelConfianza.confiable => '✅',
-        NivelConfianza.estrella => '⭐',
+        NivelConfianza.lider => '👑',
       };
 }
 
@@ -369,6 +394,8 @@ class Chat {
   final String id;
   final String? juntadaId;
   final String? titulo;
+  final String? contactoNombre;
+  final String? contactoFoto;
   final bool esGrupal;
   final bool silenciado;
   final bool archivado;
@@ -381,6 +408,8 @@ class Chat {
     required this.id,
     this.juntadaId,
     this.titulo,
+    this.contactoNombre,
+    this.contactoFoto,
     required this.esGrupal,
     this.silenciado = false,
     this.archivado = false,
@@ -396,11 +425,15 @@ class Chat {
     bool? fijado,
     bool? eliminado,
     List<Mensaje>? mensajes,
+    String? contactoNombre,
+    String? contactoFoto,
   }) =>
       Chat(
         id: id,
         juntadaId: juntadaId,
         titulo: titulo,
+        contactoNombre: contactoNombre ?? this.contactoNombre,
+        contactoFoto: contactoFoto ?? this.contactoFoto,
         esGrupal: esGrupal,
         silenciado: silenciado ?? this.silenciado,
         archivado: archivado ?? this.archivado,
@@ -412,6 +445,13 @@ class Chat {
 
   Mensaje? get ultimoMensaje => mensajes.isNotEmpty ? mensajes.last : null;
   int get mensajesNoLeidos => 0; // Se calcula con el userId en pantalla
+  String get displayTitle => titulo?.trim().isNotEmpty == true
+      ? titulo!.trim()
+      : contactoNombre?.trim().isNotEmpty == true
+          ? contactoNombre!.trim()
+          : esGrupal
+              ? 'Grupo'
+              : 'Chat';
 
   factory Chat.fromJson(Map<String, dynamic> json) {
     final rawConfig = json['mi_configuracion'];
@@ -425,6 +465,8 @@ class Chat {
       id: json['id'] as String,
       juntadaId: json['juntada_id'] as String?,
       titulo: json['titulo'] as String?,
+      contactoNombre: json['contacto_nombre'] as String?,
+      contactoFoto: json['contacto_foto'] as String?,
       esGrupal: json['es_grupal'] as bool? ?? true,
       silenciado: config['silenciado'] as bool? ?? false,
       archivado: config['archivado'] as bool? ?? false,

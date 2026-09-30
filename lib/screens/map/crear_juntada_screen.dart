@@ -72,6 +72,7 @@ class _CrearJuntadaScreenState extends State<CrearJuntadaScreen> {
   }
 
   Future<void> _guardar() async {
+    if (_guardando) return;
     if (!_formKey.currentState!.validate()) return;
     final provider = context.read<AppProvider>();
     final usuario = provider.usuario;
@@ -109,6 +110,13 @@ class _CrearJuntadaScreenState extends State<CrearJuntadaScreen> {
             backgroundColor: PlanazoColors.exito));
         context.go('/juntada/${nueva.id}');
       }
+    } on StateError catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error.message.toString()),
+          backgroundColor: PlanazoColors.error,
+        ));
+      }
     } on PostgrestException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -124,132 +132,144 @@ class _CrearJuntadaScreenState extends State<CrearJuntadaScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Volver',
-          onPressed: () => context.pop()),
-            title: const Text('Crear juntada',
-                style: TextStyle(fontWeight: FontWeight.w800))),
-        backgroundColor: PlanazoColors.negro,
-        body: Theme(
-          data: Theme.of(context).copyWith(
-            scaffoldBackgroundColor: PlanazoColors.negro,
-            inputDecorationTheme: Theme.of(context)
-                .inputDecorationTheme
-                .copyWith(
-                  filled: true,
-                  fillColor: PlanazoColors.negroSuave,
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  prefixIconColor: PlanazoColors.amarillo,
-                  enabledBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24)),
-                  focusedBorder: const OutlineInputBorder(
-                      borderSide:
-                          BorderSide(color: PlanazoColors.amarillo, width: 2)),
-                ),
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-                  surface: PlanazoColors.negroSuave,
-                  onSurface: Colors.white,
-                  primary: PlanazoColors.amarillo,
-                ),
-          ),
-          child: Form(
-            key: _formKey,
-            child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                children: [
-                  const Text('Armá un plan que den ganas de aceptar.',
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 6),
-                  const Text(
-                      'Completá los datos principales y encontrá gente con tus mismos intereses.',
-                      style: TextStyle(color: PlanazoColors.textoSecundario)),
-                  const SizedBox(height: 24),
-                  _field(_tituloCtrl, 'Título',
-                      'Ej. Picnic y juegos en el parque', 3,
-                      maxLength: 100),
-                  _field(_descripcionCtrl, 'Descripción',
-                      'Contá qué tienen pensado hacer', 10,
-                      maxLength: 1000, maxLines: 4),
-                  DropdownButtonFormField<String>(
-                      initialValue: _categoria,
-                      decoration: const InputDecoration(
-                          labelText: 'Categoría',
-                          prefixIcon: Icon(Icons.local_activity_outlined)),
-                      items: CategoriaJuntada.todas
-                          .map((cat) => DropdownMenuItem(
-                              value: cat.nombre,
-                              child: Text('${cat.emoji} ${cat.nombre}')))
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _categoria = value!)),
-                  const SizedBox(height: 14),
-                  Row(children: [
-                    Expanded(
-                        child: _dateButton(
-                            Icons.calendar_today_outlined,
-                            '${_fecha.day}/${_fecha.month}/${_fecha.year}',
-                            _elegirFecha)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                        child: _dateButton(Icons.schedule_outlined,
-                            _hora.format(context), _elegirHora))
-                  ]),
-                  const SizedBox(height: 14),
-                  _field(_lugarCtrl, 'Lugar', 'Ej. Plaza Armenia', 5),
-                  DropdownButtonFormField<String>(
-                      initialValue: _barrio,
-                      decoration: const InputDecoration(
-                          labelText: 'Barrio',
-                          prefixIcon: Icon(Icons.location_city_outlined)),
-                      dropdownColor: PlanazoColors.negroSuave,
-                      style: const TextStyle(color: Colors.white),
-                      items: _barrios
-                          .map((barrio) => DropdownMenuItem(
-                              value: barrio, child: Text(barrio)))
-                          .toList(),
-                      validator: (value) =>
-                          value == null ? 'Elegí un barrio' : null,
-                      onChanged: (value) => setState(() => _barrio = value)),
-                  const SizedBox(height: 6),
-                  Text('Capacidad: ${_capacidad.round()} personas',
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Slider(
-                      value: _capacidad,
-                      min: 2,
-                      max: 50,
-                      divisions: 48,
-                      activeColor: PlanazoColors.amarilloOscuro,
-                      label: '${_capacidad.round()}',
-                      onChanged: (value) => setState(() => _capacidad = value)),
-                  SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Solo personas verificadas'),
-                      subtitle: const Text('Sumá un filtro extra de confianza'),
-                      value: _soloVerificados,
-                      activeThumbColor: PlanazoColors.amarilloOscuro,
-                      onChanged: (value) =>
-                          setState(() => _soloVerificados = value)),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                      onPressed: _guardando ? null : _guardar,
-                      icon: _guardando
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: PlanazoColors.negro))
-                          : const Icon(Icons.rocket_launch_outlined),
-                      label:
-                          Text(_guardando ? 'Creando...' : 'Publicar juntada')),
-                ]),
-          ),
+  Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+    final esPremium = provider.usuario?.esPremium ?? false;
+    final capacidadMaxima = esPremium ? 50.0 : 10.0;
+    return Scaffold(
+      appBar: AppBar(
+          leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Volver',
+              onPressed: () => context.pop()),
+          title: const Text('Crear juntada',
+              style: TextStyle(fontWeight: FontWeight.w800))),
+      backgroundColor: PlanazoColors.negro,
+      body: Theme(
+        data: Theme.of(context).copyWith(
+          scaffoldBackgroundColor: PlanazoColors.negro,
+          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+                filled: true,
+                fillColor: PlanazoColors.negroSuave,
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintStyle: const TextStyle(color: Colors.white38),
+                prefixIconColor: PlanazoColors.amarillo,
+                enabledBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: const OutlineInputBorder(
+                    borderSide:
+                        BorderSide(color: PlanazoColors.amarillo, width: 2)),
+              ),
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                surface: PlanazoColors.negroSuave,
+                onSurface: Colors.white,
+                primary: PlanazoColors.amarillo,
+              ),
         ),
-      );
+        child: Form(
+          key: _formKey,
+          child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              children: [
+                const Text('Armá un plan que den ganas de aceptar.',
+                    style:
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                const Text(
+                    'Completá los datos principales y encontrá gente con tus mismos intereses.',
+                    style: TextStyle(color: PlanazoColors.textoSecundario)),
+                const SizedBox(height: 24),
+                _field(_tituloCtrl, 'Título',
+                    'Ej. Picnic y juegos en el parque', 3,
+                    maxLength: 100),
+                _field(_descripcionCtrl, 'Descripción',
+                    'Contá qué tienen pensado hacer', 10,
+                    maxLength: 1000, maxLines: 4),
+                DropdownButtonFormField<String>(
+                    initialValue: _categoria,
+                    decoration: const InputDecoration(
+                        labelText: 'Categoría',
+                        prefixIcon: Icon(Icons.local_activity_outlined)),
+                    items: CategoriaJuntada.todas
+                        .map((cat) => DropdownMenuItem(
+                            value: cat.nombre,
+                            child: Text('${cat.emoji} ${cat.nombre}')))
+                        .toList(),
+                    onChanged: (value) => setState(() => _categoria = value!)),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(
+                      child: _dateButton(
+                          Icons.calendar_today_outlined,
+                          '${_fecha.day}/${_fecha.month}/${_fecha.year}',
+                          _elegirFecha)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: _dateButton(Icons.schedule_outlined,
+                          _hora.format(context), _elegirHora))
+                ]),
+                const SizedBox(height: 14),
+                _field(_lugarCtrl, 'Lugar', 'Ej. Plaza Armenia', 5),
+                DropdownButtonFormField<String>(
+                    initialValue: _barrio,
+                    decoration: const InputDecoration(
+                        labelText: 'Barrio',
+                        prefixIcon: Icon(Icons.location_city_outlined)),
+                    dropdownColor: PlanazoColors.negroSuave,
+                    style: const TextStyle(color: Colors.white),
+                    items: _barrios
+                        .map((barrio) => DropdownMenuItem(
+                            value: barrio, child: Text(barrio)))
+                        .toList(),
+                    validator: (value) =>
+                        value == null ? 'Elegí un barrio' : null,
+                    onChanged: (value) => setState(() => _barrio = value)),
+                const SizedBox(height: 6),
+                Text(
+                    'Capacidad: ${_capacidad.round()} personas (máximo ${capacidadMaxima.round()})',
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                Slider(
+                    value: _capacidad,
+                    min: 2,
+                    max: capacidadMaxima,
+                    divisions: (capacidadMaxima - 2).round(),
+                    activeColor: PlanazoColors.amarilloOscuro,
+                    label: '${_capacidad.round()}',
+                    onChanged: (value) => setState(() => _capacidad = value)),
+                if (!esPremium)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Plan gratuito: ${provider.juntadasCreadasEsteMes}/3 juntadas creadas este mes.',
+                      style: const TextStyle(
+                          color: PlanazoColors.textoSecundario, fontSize: 12),
+                    ),
+                  ),
+                SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Solo personas verificadas'),
+                    subtitle: const Text('Sumá un filtro extra de confianza'),
+                    value: _soloVerificados,
+                    activeThumbColor: PlanazoColors.amarilloOscuro,
+                    onChanged: (value) =>
+                        setState(() => _soloVerificados = value)),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                    onPressed: _guardando ? null : _guardar,
+                    icon: _guardando
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: PlanazoColors.negro))
+                        : const Icon(Icons.rocket_launch_outlined),
+                    label:
+                        Text(_guardando ? 'Creando...' : 'Publicar juntada')),
+              ]),
+        ),
+      ),
+    );
+  }
 
   void _mostrarErrorTecnico(Object error) {
     final detalle = error is PostgrestException

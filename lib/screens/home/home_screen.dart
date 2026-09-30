@@ -157,7 +157,8 @@ class _TarjetaConfianza extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nivel = usuario.nivelConfianza;
-    final progreso = (usuario.puntosConfianza / 500).clamp(0.0, 1.0);
+    final progreso = nivel.progreso(usuario.puntosConfianza);
+    final siguienteNivel = nivel.siguiente;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -200,11 +201,16 @@ class _TarjetaConfianza extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          const Text('0', style: TextStyle(fontSize: 9, color: Colors.white30)),
-          Text('${(progreso * 100).toInt()}% hacia ⭐ Estrella',
-              style: const TextStyle(fontSize: 9, color: Colors.white38)),
-          const Text('500',
-              style: TextStyle(fontSize: 9, color: Colors.white30)),
+          Text('${nivel.puntosMinimos}',
+              style: const TextStyle(fontSize: 9, color: Colors.white30)),
+          Text(
+            siguienteNivel == null
+                ? 'Nivel máximo alcanzado'
+                : '${(progreso * 100).toInt()}% hacia ${siguienteNivel.etiqueta}',
+            style: const TextStyle(fontSize: 9, color: Colors.white38),
+          ),
+          Text('${siguienteNivel?.puntosMinimos ?? nivel.puntosMinimos}',
+              style: const TextStyle(fontSize: 9, color: Colors.white30)),
         ]),
         const SizedBox(height: 12),
         Row(children: [

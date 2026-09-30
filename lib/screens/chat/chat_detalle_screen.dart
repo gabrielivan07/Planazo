@@ -143,7 +143,7 @@ class _State extends State<ChatDetalleScreen> {
     final chat = chats
         .cast<Chat?>()
         .firstWhere((c) => c?.id == widget.chatId, orElse: () => null);
-    final titulo = chat?.titulo ?? 'Chat';
+    final titulo = chat?.displayTitle ?? 'Chat';
 
     return Scaffold(
       appBar: AppBar(

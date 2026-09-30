@@ -117,6 +117,19 @@ class JuntadasService {
     return Juntada.fromJson(data);
   }
 
+  Future<int> contarCreadasEsteMes(String usuarioId) async {
+    final ahora = DateTime.now().toUtc();
+    final inicio = DateTime.utc(ahora.year, ahora.month);
+    final fin = DateTime.utc(ahora.year, ahora.month + 1);
+    final data = await _db
+        .from('juntadas')
+        .select('id')
+        .eq('organizador_id', usuarioId)
+        .gte('created_at', inicio.toIso8601String())
+        .lt('created_at', fin.toIso8601String());
+    return (data as List).length;
+  }
+
   // ─── CREAR ────────────────────────────────────────────────
   Future<Juntada> crear(Juntada juntada) async {
     // 1. Insertar en juntadas (el trigger crea el chat automáticamente)
@@ -165,6 +178,26 @@ class JuntadasService {
         .update({'estado': 'cancelado'})
         .eq('juntada_id', juntadaId)
         .eq('usuario_id', usuarioId);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAsistencia(String juntadaId) async {
+    final data = await _db.rpc(
+      'obtener_asistencia_juntada',
+      params: {'p_juntada_id': juntadaId},
+    );
+    return (data as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> marcarAsistencia({
+    required String juntadaId,
+    required String usuarioId,
+    required String asistencia,
+  }) async {
+    await _db.rpc('marcar_asistencia_juntada', params: {
+      'p_juntada_id': juntadaId,
+      'p_usuario_id': usuarioId,
+      'p_asistencia': asistencia,
+    });
   }
 
   // ─── CANCELAR JUNTADA (solo organizador) ──────────────────

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../models/models.dart';
@@ -196,6 +197,27 @@ class _DetalleJuntadaScreenState extends State<DetalleJuntadaScreen> {
                       : const Icon(Icons.chat_bubble_outline),
                   label: const Text('Abrir chat de la juntada'))
             ],
+            if (unido && juntada.yaPaso) ...[
+              const SizedBox(height: 18),
+              OutlinedButton.icon(
+                onPressed: () => _resenarJuntada(juntada),
+                icon: const Icon(Icons.rate_review_outlined),
+                label: const Text('Reseñar la juntada'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _calificarParticipantes(juntada),
+                icon: const Icon(Icons.people_outline),
+                label: const Text('Calificar participantes'),
+              ),
+            ],
+            if (esOrganizador && juntada.yaPaso) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => _gestionarAsistencia(juntada),
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('Marcar asistencia'),
+              ),
+            ],
           ]),
     );
   }
@@ -240,6 +262,285 @@ class _DetalleJuntadaScreenState extends State<DetalleJuntadaScreen> {
       if (mounted) setState(() => _abriendoChat = false);
     }
   }
+
+  Future<void> _resenarJuntada(Juntada juntada) async {
+    final provider = context.read<AppProvider>();
+    final resena = await _pedirResena('esta juntada');
+    if (resena == null || !mounted) return;
+    try {
+      await provider.enviarResenaJuntada(
+        juntadaId: juntada.id,
+        puntuacion: resena.$1,
+        comentario: resena.$2,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Reseña enviada. Gracias por compartir tu experiencia.'),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No se pudo enviar. Quizás ya reseñaste esta juntada.'),
+        backgroundColor: PlanazoColors.error,
+      ));
+    }
+  }
+
+  Future<(int, String)?> _pedirResena(String destino) async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var puntuacion = 5.0;
+    final resultado = await showDialog<(int, String)>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Reseña de $destino'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RatingBar.builder(
+                  initialRating: puntuacion,
+                  minRating: 1,
+                  allowHalfRating: false,
+                  itemCount: 5,
+                  itemSize: 32,
+                  itemBuilder: (_, __) => const Icon(
+                    Icons.star_rounded,
+                    color: PlanazoColors.amarilloOscuro,
+                  ),
+                  onRatingUpdate: (value) =>
+                      setDialogState(() => puntuacion = value),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: controller,
+                  minLines: 3,
+                  maxLines: 4,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'Contá cómo fue (mínimo 5 caracteres)',
+                    alignLabelWithHint: true,
+                  ),
+                  validator: (value) => value == null || value.trim().length < 5
+                      ? 'Escribí al menos 5 caracteres'
+                      : null,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(
+                  dialogContext,
+                  (puntuacion.round(), controller.text.trim()),
+                );
+              },
+              child: const Text('Enviar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    return resultado;
+  }
+
+  Future<void> _calificarParticipantes(Juntada juntada) async {
+    final provider = context.read<AppProvider>();
+    try {
+      final participantes = await provider.participantesParaResena(juntada.id);
+      if (!mounted) return;
+      if (participantes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Todavía no hay otros participantes para calificar.'),
+        ));
+        return;
+      }
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(sheetContext).height * 0.65,
+            child: Column(children: [
+              const Padding(
+                padding: EdgeInsets.all(18),
+                child: Text('Calificar participantes',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: participantes.length,
+                  itemBuilder: (context, index) {
+                    final participante = participantes[index];
+                    final id = participante['usuario_id'] as String;
+                    final nombre =
+                        '${participante['nombre'] ?? ''} ${participante['apellido'] ?? ''}'
+                            .trim();
+                    final foto = participante['foto_perfil_url'] as String?;
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage:
+                            foto == null ? null : NetworkImage(foto),
+                        child: foto == null
+                            ? Text(
+                                nombre.isEmpty ? '?' : nombre[0].toUpperCase())
+                            : null,
+                      ),
+                      title: Text(nombre.isEmpty ? 'Participante' : nombre),
+                      trailing: const Icon(Icons.rate_review_outlined),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _resenarParticipante(juntada, id, nombre);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudieron cargar los participantes.'),
+          backgroundColor: PlanazoColors.error,
+        ));
+      }
+    }
+  }
+
+  Future<void> _resenarParticipante(
+      Juntada juntada, String participanteId, String nombre) async {
+    final provider = context.read<AppProvider>();
+    final resena = await _pedirResena(nombre.isEmpty ? 'participante' : nombre);
+    if (resena == null || !mounted) return;
+    try {
+      await provider.enviarResenaParticipante(
+        juntadaId: juntada.id,
+        participanteId: participanteId,
+        puntuacion: resena.$1,
+        comentario: resena.$2,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Calificación enviada.'),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('No se pudo calificar. Quizás ya calificaste a esta persona.'),
+        backgroundColor: PlanazoColors.error,
+      ));
+    }
+  }
+
+  Future<void> _gestionarAsistencia(Juntada juntada) async {
+    final provider = context.read<AppProvider>();
+    try {
+      final participantes = await provider.obtenerAsistenciaJuntada(juntada.id);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(sheetContext).height * 0.65,
+              child: Column(children: [
+                const Padding(
+                  padding: EdgeInsets.all(18),
+                  child: Text('Asistencia',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: participantes.length,
+                    itemBuilder: (context, index) {
+                      final participante = participantes[index];
+                      final id = participante['usuario_id'] as String;
+                      final nombre =
+                          '${participante['nombre'] ?? ''} ${participante['apellido'] ?? ''}'
+                              .trim();
+                      final asistencia =
+                          participante['asistencia'] as String? ?? 'pendiente';
+                      return ListTile(
+                        title: Text(nombre.isEmpty ? 'Participante' : nombre),
+                        subtitle: Text(_etiquetaAsistencia(asistencia)),
+                        trailing: asistencia != 'pendiente'
+                            ? const Icon(Icons.check_circle_outline)
+                            : PopupMenuButton<String>(
+                                tooltip: 'Marcar asistencia',
+                                onSelected: (estado) async {
+                                  try {
+                                    await provider.marcarAsistencia(
+                                      juntadaId: juntada.id,
+                                      usuarioId: id,
+                                      asistencia: estado,
+                                    );
+                                    if (mounted) {
+                                      setSheetState(() =>
+                                          participante['asistencia'] = estado);
+                                    }
+                                  } catch (_) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(const SnackBar(
+                                        content: Text(
+                                            'No se pudo guardar la asistencia.'),
+                                      ));
+                                    }
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                      value: 'puntual',
+                                      child: Text('Llegó puntual')),
+                                  PopupMenuItem(
+                                      value: 'tarde',
+                                      child: Text('Llegó tarde')),
+                                  PopupMenuItem(
+                                      value: 'ausente', child: Text('Ausente')),
+                                ],
+                              ),
+                      );
+                    },
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo cargar la asistencia.'),
+          backgroundColor: PlanazoColors.error,
+        ));
+      }
+    }
+  }
+
+  String _etiquetaAsistencia(String asistencia) => switch (asistencia) {
+        'puntual' => 'Llegó puntual',
+        'tarde' => 'Llegó tarde',
+        'ausente' => 'Ausente',
+        _ => 'Sin marcar',
+      };
 
   Future<void> _reportarJuntada(BuildContext context, Juntada juntada) async {
     const motivos = [

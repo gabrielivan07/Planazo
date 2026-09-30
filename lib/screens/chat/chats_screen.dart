@@ -83,7 +83,7 @@ class _ChatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titulo = chat.titulo ?? (chat.esGrupal ? 'Grupo' : 'Chat');
+    final titulo = chat.displayTitle;
     final ultimo = chat.ultimoMensaje;
     final noLeidos = ultimo != null && !ultimo.esLeido(miUid) ? 1 : 0;
 
@@ -92,16 +92,21 @@ class _ChatTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       leading: CircleAvatar(
         radius: 24,
+        backgroundImage: !chat.esGrupal && chat.contactoFoto != null
+            ? NetworkImage(chat.contactoFoto!)
+            : null,
         backgroundColor: chat.esGrupal
             ? PlanazoColors.amarillo
             : PlanazoColors.fondoSecundario,
-        child: chat.esGrupal
-            ? const Text('👥', style: TextStyle(fontSize: 20))
-            : Text(titulo.isNotEmpty ? titulo[0].toUpperCase() : '?',
-                style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: PlanazoColors.negro)),
+        child: chat.contactoFoto != null && !chat.esGrupal
+            ? null
+            : chat.esGrupal
+                ? const Text('👥', style: TextStyle(fontSize: 20))
+                : Text(titulo.isNotEmpty ? titulo[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: PlanazoColors.negro)),
       ),
       title: Row(children: [
         Expanded(
